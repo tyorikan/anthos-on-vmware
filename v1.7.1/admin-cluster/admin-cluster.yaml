@@ -1,11 +1,14 @@
 apiVersion: v1
 kind: AdminCluster
 # (Required) Absolute path to a GKE bundle on disk
-bundlePath: /var/lib/gke/bundles/gke-onprem-vsphere-1.7.0-gke.16-full.tgz
+bundlePath: /var/lib/gke/bundles/gke-onprem-vsphere-1.7.1-gke.4-full.tgz
 # (Required) vCenter configuration
 vCenter:
   address: 172.16.10.2
   datacenter: GKE On-Prem
+  # (Optional) vSphere folder where cluster VMs will be located. Defaults to the the
+  # datacenter wide folder if unspecified.
+  folder: ""
   cluster: GKE On-Prem
   # Resource pool to use. Specify [VSPHERE_CLUSTER_NAME]/Resources to use the default
   # resource pool
@@ -41,9 +44,9 @@ network:
   ipMode:
     # (Required) Define what IP mode to use ("dhcp" or "static")
     type: static
-    # # (Required when using "static" mode) The absolute or relative path to the yaml file
-    # # to use for static IP allocation. Hostconfig part will be overwritten by network.hostconfig
-    # # if specified
+    # (Required when using "static" mode) The absolute or relative path to the yaml file
+    # to use for static IP allocation. Hostconfig part will be overwritten by network.hostconfig
+    # if specified
     ipBlockFilePath: "admin-ips.yaml"
   # (Required) The Kubernetes service CIDR range for the cluster. Must not overlap
   # with the pod CIDR range
@@ -112,11 +115,18 @@ loadBalancer:
       networkName: internal vm network
     # (Optional) Run two LB VMs to achieve high availability (default: false)
     enableHA: false
+    # (Optional) Avoid using VRRP MAC and rely on gratuitous ARP to do failover. In
+    # this mode MAC learning is not needed but the gateway must refresh arp table
+    # based on gratuitous ARP. It's recommended to turn this on to avoid MAC learning
+    # configuration. In vsphere 7+ it must be true to enable HA. It is supported in
+    # GKE on-prem version 1.7+. (default: false)
+    disableVRRPMAC: true
 # Spread admin addon nodes and user masters across different physical hosts (requires
 # at least three hosts)
 antiAffinityGroups:
   # Set to false to disable DRS rule creation
   enabled: false
+connectivity: connected
 # (Optional) Specify the proxy configuration
 proxy:
   # The URL of the proxy
@@ -138,7 +148,7 @@ proxy:
 #   caCertPath: ""
 # (Required): The absolute or relative path to the GCP service account key for pulling
 # GKE images
-gcrKeyPath: component-access-key.json
+componentAccessServiceAccountKeyPath: component-access-key.json
 # (Optional) Specify which GCP project to connect your logs and metrics to
 stackdriver:
   projectID: anthosday
@@ -147,9 +157,9 @@ stackdriver:
   enableVPC: false
   # The absolute or relative path to the key file for a GCP service account used to
   # send logs and metrics from the cluster
-  serviceAccountKeyPath: log-mon-sa-2103010314.json
-  # (Optional/Preview) Disable vsphere resource metrics collection from vcenter. True
-  # by default
+  serviceAccountKeyPath: log-mon-sa-2105170420.json
+  # (Optional) Disable vsphere resource metrics collection from vcenter.  False by
+  # default
   disableVsphereResourceMetrics: false
 # # (Optional) Configure kubernetes apiserver audit logging
 # cloudAuditLogging:
@@ -159,7 +169,7 @@ stackdriver:
 #   # The absolute or relative path to the key file for a GCP service account used to
 #   # send audit logs from the cluster
 #   serviceAccountKeyPath: ""
-# # (Optional/Preview) Enable auto repair for the cluster
+# Enable auto repair for the cluster
 autoRepair:
-  # Whether to enable auto repair feature. The feature is disabled by default.
+  # Whether to enable auto repair feature. Set false to disable.
   enabled: true

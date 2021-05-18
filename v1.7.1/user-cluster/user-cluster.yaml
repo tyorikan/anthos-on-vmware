@@ -3,7 +3,7 @@ kind: UserCluster
 # (Required) A unique name for this cluster
 name: "vmw-user-cluster"
 # (Required) GKE on-prem version (example: 1.3.0-gke.16)
-gkeOnPremVersion: 1.7.0-gke.16
+gkeOnPremVersion: 1.7.1-gke.4
 # # (Optional) vCenter configuration (default: inherit from the admin cluster)
 # vCenter:
 #   # Resource pool to use. Specify [VSPHERE_CLUSTER_NAME]/Resources to use the default
@@ -38,25 +38,19 @@ network:
   ipMode:
     # (Required) Define what IP mode to use ("dhcp" or "static")
     type: static
-    # # (Required when using "static" mode) The absolute or relative path to the yaml file
-    # # to use for static IP allocation. Hostconfig part will be overwritten by network.hostconfig
-    # # if specified
+    # (Required when using "static" mode) The absolute or relative path to the yaml file
+    # to use for static IP allocation. Hostconfig part will be overwritten by network.hostconfig
+    # if specified
     ipBlockFilePath: "user1-ips.yaml"
   # (Required) The Kubernetes service CIDR range for the cluster. Must not overlap
   # with the pod CIDR range
-  serviceCIDR: 10.96.0.0/12
+  serviceCIDR: 10.96.0.0/20
   # (Required) The Kubernetes pod CIDR range for the cluster. Must not overlap with
   # the service CIDR range
-  podCIDR: 192.168.0.0/16
+  podCIDR: 192.168.0.0/17
   vCenter:
     # vSphere network name
     networkName: external vm network
-  additionalInterfaces:
-    - networkName: “internal vm network”
-      ipBlockFilePath: “user1-management-ips.yaml” # optional, if we wish to setup static IPs
-      type: static # IP type to set on the additional interface, we will introduce ‘none’ option to allow no IP configuration (except being UP)
-      cni: ipvlan # first available cni
-      podCIDR: “172.120.0.0/24” # (optional) used for IPAM
 # (Required) Load balancer configuration
 loadBalancer:
   # (Required) The VIPs to use for load balancing
@@ -114,7 +108,13 @@ loadBalancer:
       networkName: external vm network
     # (Optional) Run two LB VMs to achieve high availability (default: false)
     enableHA: false
-# # (Optional/Preview) Enable dataplane v2
+    # (Optional) Avoid using VRRP MAC and rely on gratuitous ARP to do failover. In
+    # this mode MAC learning is not needed but the gateway must refresh arp table
+    # based on gratuitous ARP. It's recommended to turn this on to avoid MAC learning
+    # configuration. In vsphere 7+ it must be true to enable HA. It is supported in
+    # GKE on-prem version 1.7+. (default: false)
+    disableVRRPMAC: true
+# # (Optional) Enable dataplane v2
 # enableDataplaneV2: false
 # # (Optional) Storage specification for the cluster
 # storage:
@@ -131,13 +131,16 @@ masterNode:
 # (Required) List of node pools. The total un-tainted replicas across all node pools
 # must be greater than or equal to 3
 nodePools:
-  - name: pool-1
+  - name: vmw-demo-pool-1
     cpus: 4
     memoryMB: 8192
     # How many machines of this type to deploy
     replicas: 3
     # # (Optional) boot disk size; must be at least 40 (default: 40)
     # bootDiskSizeGB: 40
+    # (Optional) Specify the type of OS image; available options can be set to "ubuntu"
+    # or "cos". Default is "ubuntu".
+    osImageType: cos
     # # Labels to apply to Kubernetes Node objects
     # labels: {}
     # # Taints to apply to Kubernetes Node objects
@@ -148,11 +151,20 @@ nodePools:
     # vsphere:
     #   # (Optional) vSphere datastore the node pool will be created on (default: vCenter.datastore)
     #   datastore: ""
+    #   # (Optional/Preview) vsphere tags to be attached to the virtual machines in the
+    #   # node pool. It is supported in GKE on-prem version 1.7+
+    #   tags:
+    #   - category: ""
+    #     name: ""
 # Spread nodes across at least three physical hosts (requires at least three hosts)
 antiAffinityGroups:
   # Set to false to disable DRS rule creation
   enabled: false
-# # (Optional): Configure additional authentication
+# # (Optional) Configure additional authentication.
+# # Please note that OIDC and LDAP configuration will be removed starting in Anthos
+# # 1.10.
+# # Please refer to https://cloud.google.com/anthos/gke/docs/on-prem/1.6/how-to/oidc#oidc_spec
+# # for dynamic configuration changes after cluster creation.
 # authentication:
 #   # (Optional) Configure OIDC authentication
 #   oidc:
@@ -212,19 +224,19 @@ stackdriver:
   enableVPC: false
   # The absolute or relative path to the key file for a GCP service account used to
   # send logs and metrics from the cluster
-  serviceAccountKeyPath: log-mon-sa-2103010314.json
-  # (Optional/Preview) Disable vsphere resource metrics collection from vcenter. True
-  # by default
+  serviceAccountKeyPath: log-mon-sa-2105170420.json
+  # (Optional) Disable vsphere resource metrics collection from vcenter.  False by
+  # default
   disableVsphereResourceMetrics: false
 # (Optional) Specify which GCP project to connect your GKE clusters to
 gkeConnect:
   projectID: anthosday
   # The absolute or relative path to the key file for a GCP service account used to
   # register the cluster
-  registerServiceAccountKeyPath: connect-register-sa-2103010314.json
+  registerServiceAccountKeyPath: connect-register-sa-2105170420.json
   # The absolute or relative path to the key file for a GCP service account used by
   # the GKE connect agent
-  agentServiceAccountKeyPath: connect-agent-sa-2103010314.json
+  agentServiceAccountKeyPath: connect-agent-sa-2105170420.json
 # (Optional) Specify Cloud Run configuration
 cloudRun:
   enabled: false
@@ -238,7 +250,7 @@ cloudRun:
 #   bigQueryServiceAccountKeyPath: ""
 #   # Whether or not to enable consumption-based metering
 #   enableConsumptionMetering: false
-# # (Optional/Alpha) Configure kubernetes apiserver audit logging
+# # (Optional/Preview) Configure kubernetes apiserver audit logging
 # cloudAuditLogging:
 #   projectID: ""
 #   # A GCP region where you would like to store audit logs for this cluster.
@@ -246,7 +258,7 @@ cloudRun:
 #   # The absolute or relative path to the key file for a GCP service account used to
 #   # send audit logs from the cluster
 #   serviceAccountKeyPath: ""
-# # (Optional/Preview) Enable auto repair for the cluster
+# Enable auto repair for the cluster
 autoRepair:
-  # Whether to enable auto repair feature. The feature is disabled by default.
+  # Whether to enable auto repair feature. Set false to disable.
   enabled: true
